@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4D Slinky Visualizer</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; }
+        #info { 
+            position: absolute; 
+            top: 20px; 
+            width: 100%; 
+            text-align: center; 
+            color: #ffffff; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            pointer-events: none;
+            text-shadow: 1px 1px 2px #000;
+        }
+    </style>
+    <!-- Include Three.js and OrbitControls via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div id="info">
+        <strong>4D Slinky (Hyperhelix) Projection</strong><br>
+        Left-click + drag to rotate 3D viewport | Scroll to zoom<br>
+        Morphing continuously along the XW and ZW 4D planes
+    </div>
+
+    <script>
+        // --- 1. Scene Setup ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        camera.position.set(0, 8, 16);
+        controls.update();
+
+        // --- 2. Generate 4D Slinky Base Points ---
+        const numPoints = 1500;
+        const basePoints4D = [];
+        
+        // Geometric parameters
+        const R1 = 4;           // Primary 3D slinky radius
+        const R2 = 1.2;         // Secondary 4D coiling radius
+        const alpha = 12;       // Frequency of the 4D loops per 3D loop
+        const lengthFactor = 0.1; // How stretched out the slinky is along the Y axis
+
+        for (let i = 0; i < numPoints; i++) {
+            // Map i to a continuous angle theta spanning multiple rotations
+            let theta = (i / numPoints) * Math.PI * 2 * 8; 
+            
+            let x = R1 * Math.cos(theta);
+            let y = (theta * lengthFactor) - 2.5; // Center along Y axis
+            let z = R1 * Math.sin(theta);
+            let w = R2 * Math.sin(alpha * theta); // 4D offset
+
+            // Modify an existing axis with the secondary coil for true hyperhelical behavior
+            x += R2 * Math.cos(alpha * theta);
+
+            basePoints4D.push({ x, y, z, w });
+        }
+
+        // --- 3. Construct 3D Render Object ---
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(numPoints * 3);
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+        // Generate a color gradient to make spatial tracking intuitive
+        const colors = new Float32Array(numPoints * 3);
+        for(let i = 0; i < numPoints; i++) {
+            const ratio = i / numPoints;
+            colors[i*3] = 0.2 + ratio * 0.8;       // Red
+            colors[i*3+1] = 0.4 * (1 - ratio);     // Green
+            colors[i*3+2] = 0.6 + ratio * 0.4;     // Blue
+        }
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.LineBasicMaterial({ vertexColors: true });
+        const slinkyLine = new THREE.Line(geometry, material);
+        scene.add(slinkyLine);
+
+        // --- 4. 4D Rotation & Projection Loop ---
+        let angleXW = 0;
+        let angleZW = 0;
+        const d4 = 6; // Camera distance from the 4D hyperplane to prevent division by zero
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Increment 4D rotation angles over time
+            angleXW += 0.008;
+            angleZW += 0.005;
+
+            const positionAttribute = geometry.attributes.position;
+
+            for (let i = 0; i < numPoints; i++) {
+                let p = basePoints4D[i];
+
+                // Perform 4D rotations matrix operations manually
+                // Rotate in XW Plane
+                let xRot = p.x * Math.cos(angleXW) - p.w * Math.sin(angleXW);
+                let wRot1 = p.x * Math.sin(angleXW) + p.w * Math.cos(angleXW);
+
+                // Rotate in ZW Plane
+                let zRot = p.z * Math.cos(angleZW) - wRot1 * Math.sin(angleZW);
+                let wRot2 = p.z * Math.sin(angleZW) + wRot1 * Math.cos(angleZW);
+
+                // Perspective projection from 4D down to 3D
+                // Math: Vector3D = Vector3D_Spatial * (d4 / (d4 - w))
+                let perspectiveFactor = d4 / (d4 - wRot2);
+                
+                let x3d = xRot * perspectiveFactor;
+                let y3d = p.y * perspectiveFactor; // Keeping Y steady to anchor the slinky shape
+                let z3d = zRot * perspectiveFactor;
+
+                positionAttribute.setXYZ(i, x3d, y3d, z3d);
+            }
+
+            positionAttribute.needsUpdate = true;
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }, false);
+
+        animate();
+    </script>
+</body>
+</html>
